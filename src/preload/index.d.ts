@@ -13,8 +13,31 @@ export interface TerminalApi {
   onExit(callback: (payload: { id: string; exitCode: number }) => void): () => void
 }
 
+export type GitStatus = 'added' | 'deleted' | 'ignored' | 'modified' | 'renamed' | 'untracked'
+
+export type GitStatusEntry = {
+  path: string
+  status: GitStatus
+}
+
+export interface FilesApi {
+  list(): Promise<{
+    root: string
+    paths: string[]
+    gitStatus: GitStatusEntry[]
+    truncated: boolean
+  }>
+  read(path: string): Promise<{
+    path: string
+    content: string
+    size: number
+    kind: 'text' | 'binary' | 'too-large' | 'directory'
+  }>
+}
+
 export interface AppApi {
   terminal: TerminalApi
+  files: FilesApi
 }
 
 declare global {

@@ -23,6 +23,10 @@ const api = {
       ipcRenderer.on('terminal:exit', listener)
       return () => ipcRenderer.removeListener('terminal:exit', listener)
     }
+  },
+  files: {
+    list: () => ipcRenderer.invoke('files:list'),
+    read: (path: string) => ipcRenderer.invoke('files:read', path)
   }
 }
 
