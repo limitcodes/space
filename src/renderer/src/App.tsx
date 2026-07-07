@@ -22,7 +22,7 @@ import {
   TerminalIcon,
   XIcon
 } from '@phosphor-icons/react'
-import { tinykeys } from 'tinykeys'
+import { tinykeys, type KeybindingsMap } from 'tinykeys'
 import { parsePatchFiles, type CodeViewItem } from '@pierre/diffs'
 import { CodeView } from '@pierre/diffs/react'
 import { preparePresortedFileTreeInput, type GitStatusEntry } from '@pierre/trees'
@@ -32,6 +32,9 @@ import remarkGfm from 'remark-gfm'
 const ReactMarkdown = lazy(() => import('react-markdown'))
 const maxHighlightedBytes = 300 * 1024
 const maxRenderedMarkdownBytes = 500 * 1024
+const defaultTerminalFontSize = 13
+const minTerminalFontSize = 9
+const maxTerminalFontSize = 28
 const highlightedLanguages = [
   'bash',
   'css',
@@ -82,6 +85,7 @@ type TerminalTab = {
 type TerminalRuntime = {
   term: Terminal
   fit: FitAddon
+  fontSize: number
 }
 
 type FileReadResult = Awaited<ReturnType<typeof window.api.files.read>>
@@ -463,7 +467,14 @@ const keyboardShortcuts = [
   ['Cmd+J', 'New terminal'],
   ['Cmd+G', 'Toggle files'],
   ['Cmd+E', 'Toggle review changes'],
-  ['Cmd+W', 'Close active view or terminal']
+  ['Cmd+W', 'Close active view or terminal'],
+  ['Cmd++', 'Increase terminal text size'],
+  ['Cmd+-', 'Decrease terminal text size'],
+  ['Cmd+0', 'Reset terminal text size'],
+  ['Cmd+←', 'Jump to start of prompt line'],
+  ['Cmd+→', 'Jump to end of prompt line'],
+  ['Cmd+Delete', 'Delete prompt text to the left'],
+  ['Cmd+Fn+Delete', 'Delete prompt text to the right']
 ] as const
 
 function SettingsDialog({
@@ -598,11 +609,50 @@ function App(): React.JSX.Element {
       if (!runtime) return
 
       requestAnimationFrame(() => {
-        runtime.fit.fit()
-        window.api.terminal.resize(id, runtime.term.cols, runtime.term.rows)
+        const dimensions = runtime.fit.proposeDimensions()
+        if (!dimensions) return
+
+        // Leave a tiny gutter so full-screen TUIs do not draw under the clipped
+        // canvas edge when Chromium rounds terminal cell dimensions. The right
+        // edge is most sensitive because xterm's fit math can round up by a
+        // pixel at high-DPI scales.
+        const cols = Math.max(2, dimensions.cols - 2)
+        const rows = Math.max(1, dimensions.rows - 1)
+        runtime.term.resize(cols, rows)
+        window.api.terminal.resize(id, cols, rows)
       })
     },
     [runtimes]
+  )
+
+  const adjustTerminalFontSize = useCallback(
+    (id: string, delta: number) => {
+      const runtime = runtimes.get(id)
+      if (!runtime) return
+
+      const nextFontSize = Math.min(
+        maxTerminalFontSize,
+        Math.max(minTerminalFontSize, runtime.fontSize + delta)
+      )
+      if (nextFontSize === runtime.fontSize) return
+
+      runtime.fontSize = nextFontSize
+      runtime.term.options.fontSize = nextFontSize
+      fitTerminal(id)
+    },
+    [fitTerminal, runtimes]
+  )
+
+  const resetTerminalFontSize = useCallback(
+    (id: string) => {
+      const runtime = runtimes.get(id)
+      if (!runtime || runtime.fontSize === defaultTerminalFontSize) return
+
+      runtime.fontSize = defaultTerminalFontSize
+      runtime.term.options.fontSize = defaultTerminalFontSize
+      fitTerminal(id)
+    },
+    [fitTerminal, runtimes]
   )
 
   const attachTerminal = useCallback(
@@ -633,7 +683,7 @@ function App(): React.JSX.Element {
         cursorStyle: 'bar',
         fontFamily:
           'MesloLGS NF, Symbols Nerd Font Mono, Hack Nerd Font, JetBrainsMono Nerd Font, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        fontSize: 13,
+        fontSize: defaultTerminalFontSize,
         lineHeight: 1.2,
         convertEol: true,
         allowProposedApi: false,
@@ -659,6 +709,32 @@ function App(): React.JSX.Element {
       term.attachCustomKeyEventHandler((event) => {
         if (event.type !== 'keydown' || !(event.metaKey || event.ctrlKey)) return true
 
+        if (event.metaKey && !event.ctrlKey && !event.altKey) {
+          if (event.code === 'ArrowLeft') {
+            event.preventDefault()
+            window.api.terminal.write(created.id, '\x01')
+            return false
+          }
+
+          if (event.code === 'ArrowRight') {
+            event.preventDefault()
+            window.api.terminal.write(created.id, '\x05')
+            return false
+          }
+
+          if (event.code === 'Backspace') {
+            event.preventDefault()
+            window.api.terminal.write(created.id, '\x15')
+            return false
+          }
+
+          if (event.code === 'Delete') {
+            event.preventDefault()
+            window.api.terminal.write(created.id, '\x0b')
+            return false
+          }
+        }
+
         if (event.code === 'KeyG') {
           event.preventDefault()
           shortcutHandlers.current.toggleFiles()
@@ -674,6 +750,39 @@ function App(): React.JSX.Element {
         if (event.code === 'KeyW') {
           event.preventDefault()
           shortcutHandlers.current.closeActiveView()
+          return false
+        }
+
+        if (
+          event.code === 'Equal' ||
+          event.code === 'NumpadAdd' ||
+          event.key === '=' ||
+          event.key === '+'
+        ) {
+          event.preventDefault()
+          adjustTerminalFontSize(created.id, 1)
+          return false
+        }
+
+        if (
+          event.code === 'Minus' ||
+          event.code === 'NumpadSubtract' ||
+          event.key === '-' ||
+          event.key === '_'
+        ) {
+          event.preventDefault()
+          adjustTerminalFontSize(created.id, -1)
+          return false
+        }
+
+        if (
+          event.code === 'Digit0' ||
+          event.code === 'Numpad0' ||
+          event.key === '0' ||
+          event.key === ')'
+        ) {
+          event.preventDefault()
+          resetTerminalFontSize(created.id)
           return false
         }
 
@@ -700,7 +809,7 @@ function App(): React.JSX.Element {
       })
 
       const created = await window.api.terminal.create({ cols: 120, rows: 32 })
-      runtimes.set(created.id, { term, fit })
+      runtimes.set(created.id, { term, fit, fontSize: defaultTerminalFontSize })
 
       term.onData((data) => window.api.terminal.write(created.id, data))
       term.onResize(({ cols, rows }) => window.api.terminal.resize(created.id, cols, rows))
@@ -720,7 +829,7 @@ function App(): React.JSX.Element {
     } finally {
       creating.current = false
     }
-  }, [runtimes])
+  }, [adjustTerminalFontSize, resetTerminalFontSize, runtimes])
 
   const closeTerminal = useCallback(
     (id: string) => {
@@ -942,20 +1051,27 @@ function App(): React.JSX.Element {
       else if (command === 'open-workspace') void openWorkspace()
       else if (command === 'open-workspace-new-window') void openWorkspaceInNewWindow()
       else if (command === 'settings') openSettings()
+      else if (command === 'terminal-font-increase' && activeId) adjustTerminalFontSize(activeId, 1)
+      else if (command === 'terminal-font-decrease' && activeId)
+        adjustTerminalFontSize(activeId, -1)
+      else if (command === 'terminal-font-reset' && activeId) resetTerminalFontSize(activeId)
       else if (command === 'toggle-files') toggleFiles()
       else if (command === 'toggle-review') toggleReview()
     })
   }, [
+    activeId,
+    adjustTerminalFontSize,
     createTerminal,
     openSettings,
     openWorkspace,
     openWorkspaceInNewWindow,
+    resetTerminalFontSize,
     toggleFiles,
     toggleReview
   ])
 
-  useEffect(() => {
-    return tinykeys(window, {
+  const globalKeybindings = useMemo<KeybindingsMap>(
+    () => ({
       '$mod+KeyG': (event) => {
         event.preventDefault()
         toggleFiles()
@@ -972,6 +1088,22 @@ function App(): React.JSX.Element {
         event.preventDefault()
         void createTerminal()
       },
+      '$mod+Equal': (event) => {
+        event.preventDefault()
+        if (activeId) adjustTerminalFontSize(activeId, 1)
+      },
+      '$mod+Minus': (event) => {
+        event.preventDefault()
+        if (activeId) adjustTerminalFontSize(activeId, -1)
+      },
+      '$mod+-': (event) => {
+        event.preventDefault()
+        if (activeId) adjustTerminalFontSize(activeId, -1)
+      },
+      '$mod+Digit0': (event) => {
+        event.preventDefault()
+        if (activeId) resetTerminalFontSize(activeId)
+      },
       '$mod+KeyO': (event) => {
         if (event.shiftKey) return
         event.preventDefault()
@@ -986,17 +1118,23 @@ function App(): React.JSX.Element {
         openSettings()
       },
       Escape: () => closeSettings()
-    })
-  }, [
-    closeActiveView,
-    closeSettings,
-    createTerminal,
-    openSettings,
-    openWorkspace,
-    openWorkspaceInNewWindow,
-    toggleFiles,
-    toggleReview
-  ])
+    }),
+    [
+      activeId,
+      adjustTerminalFontSize,
+      closeActiveView,
+      closeSettings,
+      createTerminal,
+      openSettings,
+      openWorkspace,
+      openWorkspaceInNewWindow,
+      resetTerminalFontSize,
+      toggleFiles,
+      toggleReview
+    ]
+  )
+
+  useEffect(() => tinykeys(window, globalKeybindings), [globalKeybindings])
 
   return (
     <main className="app-shell">

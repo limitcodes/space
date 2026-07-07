@@ -116,6 +116,23 @@ function sendAppCommand(command: string): void {
   BrowserWindow.getFocusedWindow()?.webContents.send('app:command', command)
 }
 
+function terminalFontCommandForInput(input: Electron.Input): string | null {
+  if (input.type !== 'keyDown' || !(input.meta || input.control)) return null
+
+  const key = input.key.toLowerCase()
+  if (input.code === 'Equal' || input.code === 'NumpadAdd' || key === '=' || key === '+') {
+    return 'terminal-font-increase'
+  }
+  if (input.code === 'Minus' || input.code === 'NumpadSubtract' || key === '-' || key === '_') {
+    return 'terminal-font-decrease'
+  }
+  if (input.code === 'Digit0' || input.code === 'Numpad0' || key === '0' || key === ')') {
+    return 'terminal-font-reset'
+  }
+
+  return null
+}
+
 function buildApplicationMenu(): Menu {
   const appMenu: Electron.MenuItemConstructorOptions[] =
     process.platform === 'darwin'
@@ -207,9 +224,21 @@ function buildApplicationMenu(): Menu {
         { role: 'reload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        {
+          label: 'Reset Terminal Size',
+          accelerator: 'CommandOrControl+0',
+          click: () => sendAppCommand('terminal-font-reset')
+        },
+        {
+          label: 'Increase Terminal Size',
+          accelerator: 'CommandOrControl+=',
+          click: () => sendAppCommand('terminal-font-increase')
+        },
+        {
+          label: 'Decrease Terminal Size',
+          accelerator: 'CommandOrControl+-',
+          click: () => sendAppCommand('terminal-font-decrease')
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' }
       ]
@@ -279,6 +308,14 @@ function createWindow(root = app.getPath('home')): void {
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const command = terminalFontCommandForInput(input)
+    if (!command) return
+
+    event.preventDefault()
+    mainWindow.webContents.send('app:command', command)
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
