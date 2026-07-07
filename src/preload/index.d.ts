@@ -42,6 +42,7 @@ export interface ReviewApi {
 }
 
 export interface WindowApi {
+  onCommand(callback: (command: string) => void): () => void
   onFullScreen(callback: (fullscreen: boolean) => void): () => void
 }
 

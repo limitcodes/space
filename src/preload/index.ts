@@ -45,6 +45,11 @@ const api = {
     }
   },
   window: {
+    onCommand: (callback: (command: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, command: string) => callback(command)
+      ipcRenderer.on('app:command', listener)
+      return () => ipcRenderer.removeListener('app:command', listener)
+    },
     onFullScreen: (callback: (fullscreen: boolean) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, fullscreen: boolean) =>
         callback(fullscreen)

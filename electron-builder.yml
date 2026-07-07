@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: cursor
+appId: com.limitcodes.space
+productName: Space
 directories:
   buildResources: build
 files:
@@ -12,7 +12,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: cursor
+  executableName: Space
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

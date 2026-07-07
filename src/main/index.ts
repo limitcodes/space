@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import { join, relative, sep } from 'path'
 import os from 'os'
 import { watch, type FSWatcher } from 'fs'
@@ -37,8 +37,11 @@ const skippedDirectoryNames = new Set([
   'out',
   'build'
 ])
+const appName = 'Space'
 const maxFilePaths = 75000
 const maxTextFileBytes = 1024 * 1024
+
+app.setName(appName)
 
 function createWorkspaceState(root = app.getPath('home')): {
   root: string
@@ -109,6 +112,125 @@ function setWindowWorkspace(window: BrowserWindow, root: string): void {
   window.webContents.send('workspace:changed', { root, version: workspace.version })
 }
 
+function sendAppCommand(command: string): void {
+  BrowserWindow.getFocusedWindow()?.webContents.send('app:command', command)
+}
+
+function buildApplicationMenu(): Menu {
+  const appMenu: Electron.MenuItemConstructorOptions[] =
+    process.platform === 'darwin'
+      ? [
+          {
+            label: appName,
+            submenu: [
+              { label: `About ${appName}`, role: 'about' },
+              { type: 'separator' },
+              {
+                label: 'Settings…',
+                accelerator: 'CommandOrControl+,',
+                click: () => sendAppCommand('settings')
+              },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          }
+        ]
+      : []
+
+  return Menu.buildFromTemplate([
+    ...appMenu,
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Folder…',
+          accelerator: 'CommandOrControl+O',
+          click: () => sendAppCommand('open-workspace')
+        },
+        {
+          label: 'Open Folder in New Window…',
+          accelerator: 'CommandOrControl+Shift+O',
+          click: () => sendAppCommand('open-workspace-new-window')
+        },
+        { type: 'separator' },
+        {
+          label: 'New Terminal',
+          accelerator: 'CommandOrControl+J',
+          click: () => sendAppCommand('new-terminal')
+        },
+        ...(process.platform === 'darwin'
+          ? []
+          : ([
+              { type: 'separator' },
+              {
+                label: 'Settings…',
+                accelerator: 'CommandOrControl+,',
+                click: () => sendAppCommand('settings')
+              },
+              { type: 'separator' },
+              { role: 'quit' }
+            ] as Electron.MenuItemConstructorOptions[]))
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Files',
+          accelerator: 'CommandOrControl+G',
+          click: () => sendAppCommand('toggle-files')
+        },
+        {
+          label: 'Review Changes',
+          accelerator: 'CommandOrControl+E',
+          click: () => sendAppCommand('toggle-review')
+        },
+        { type: 'separator' },
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(process.platform === 'darwin'
+          ? ([{ type: 'separator' }, { role: 'front' }] as Electron.MenuItemConstructorOptions[])
+          : ([{ role: 'close' }] as Electron.MenuItemConstructorOptions[]))
+      ]
+    },
+    {
+      label: 'Help',
+      submenu: [{ label: appName, enabled: false }]
+    }
+  ])
+}
+
 function createWindow(root = app.getPath('home')): void {
   const mainWindow = new BrowserWindow({
     width: 1400,
@@ -116,7 +238,8 @@ function createWindow(root = app.getPath('home')): void {
     minWidth: 980,
     minHeight: 640,
     show: false,
-    autoHideMenuBar: true,
+    title: appName,
+    autoHideMenuBar: process.platform !== 'darwin',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 12 } }
       : {}),
@@ -489,12 +612,13 @@ function registerFileIpc(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.limitcodes.space')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  Menu.setApplicationMenu(buildApplicationMenu())
   registerWorkspaceIpc()
   registerTerminalIpc()
   registerFileIpc()

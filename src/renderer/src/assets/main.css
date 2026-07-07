@@ -466,3 +466,97 @@ body.is-fullscreen .terminal-navbar {
 .markdown-preview a {
   color: var(--color-primary);
 }
+
+.settings-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 32px));
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #181818;
+  box-shadow: 0 18px 60px #00000080;
+  color: var(--color-text);
+  padding: 0;
+}
+
+.settings-dialog::backdrop {
+  background: #00000066;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 14px 16px;
+}
+
+.settings-header h2 {
+  color: var(--color-text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.settings-header p {
+  color: var(--color-text-weak);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.settings-close {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-weak);
+  cursor: pointer;
+}
+
+.settings-close:hover {
+  background: var(--color-background-mute);
+  color: var(--color-text);
+}
+
+.settings-body {
+  overflow: auto;
+  padding: 14px 16px 16px;
+}
+
+.settings-body h3 {
+  color: var(--color-text-weak);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.shortcut-list {
+  display: grid;
+  gap: 1px;
+}
+
+.shortcut-row {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.shortcut-row kbd {
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-background-soft);
+  color: var(--color-text-weak);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 7px;
+  white-space: nowrap;
+}

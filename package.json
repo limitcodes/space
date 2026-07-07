@@ -1,7 +1,8 @@
 {
-  "name": "cursor",
+  "name": "space",
+  "productName": "Space",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "description": "A lightweight coding workspace",
   "main": "./out/main/index.js",
   "author": "example.com",
   "homepage": "https://electron-vite.org",

@@ -127,6 +127,7 @@ type ViewState = {
   reviewLoading: boolean
   selectedPath: string | null
   selectedFile: FileReadResult | null
+  settingsOpen: boolean
   workspaceRoot: string
 }
 
@@ -146,6 +147,7 @@ type ViewAction =
   | { type: 'toggleReviewItem'; id: string }
   | { type: 'selectFile'; path: string }
   | { type: 'fileLoaded'; file: FileReadResult }
+  | { type: 'setSettingsOpen'; open: boolean }
 
 const initialViewState: ViewState = {
   mode: 'terminal',
@@ -157,6 +159,7 @@ const initialViewState: ViewState = {
   reviewLoading: false,
   selectedPath: null,
   selectedFile: null,
+  settingsOpen: false,
   workspaceRoot: ''
 }
 
@@ -175,6 +178,7 @@ function viewReducer(state: ViewState, action: ViewAction): ViewState {
         fileGitStatus: [],
         reviewItems: [],
         reviewLoading: false,
+        settingsOpen: false,
         selectedPath: null,
         selectedFile: null
       }
@@ -206,6 +210,8 @@ function viewReducer(state: ViewState, action: ViewAction): ViewState {
       return { ...state, selectedPath: action.path, selectedFile: null }
     case 'fileLoaded':
       return { ...state, selectedFile: action.file }
+    case 'setSettingsOpen':
+      return { ...state, settingsOpen: action.open }
   }
 }
 
@@ -450,6 +456,61 @@ function ReviewPanel({
   )
 }
 
+const keyboardShortcuts = [
+  ['Cmd+,', 'Open settings'],
+  ['Cmd+O', 'Change workspace in this window'],
+  ['Cmd+Shift+O', 'Open workspace in new window'],
+  ['Cmd+J', 'New terminal'],
+  ['Cmd+G', 'Toggle files'],
+  ['Cmd+E', 'Toggle review changes'],
+  ['Cmd+W', 'Close active view or terminal']
+] as const
+
+function SettingsDialog({
+  dialogRef,
+  onClose
+}: {
+  dialogRef: { current: HTMLDialogElement | null }
+  onClose: () => void
+}): React.JSX.Element {
+  return (
+    <dialog
+      aria-label="Settings"
+      className="settings-dialog"
+      onCancel={onClose}
+      onClose={onClose}
+      ref={dialogRef}
+    >
+      <header className="settings-header">
+        <div>
+          <h2>Settings</h2>
+          <p>Space shortcuts</p>
+        </div>
+        <button
+          className="settings-close"
+          onClick={onClose}
+          type="button"
+          aria-label="Close settings"
+        >
+          <XIcon size={14} weight="regular" />
+        </button>
+      </header>
+
+      <div className="settings-body">
+        <h3>Keyboard Shortcuts</h3>
+        <div className="shortcut-list">
+          {keyboardShortcuts.map(([keys, label]) => (
+            <div className="shortcut-row" key={keys}>
+              <span>{label}</span>
+              <kbd>{keys}</kbd>
+            </div>
+          ))}
+        </div>
+      </div>
+    </dialog>
+  )
+}
+
 function FilesPanel({
   paths,
   selectedPath,
@@ -484,7 +545,9 @@ function FilesPanel({
       </aside>
       <main className="file-viewer" aria-label={selectedPath ?? 'File viewer'}>
         {loading ? <div className="file-empty">Loading files…</div> : null}
-        {!loading && paths.length === 0 ? <div className="file-empty">No files in workspace</div> : null}
+        {!loading && paths.length === 0 ? (
+          <div className="file-empty">No files in workspace</div>
+        ) : null}
         {!loading && paths.length > 0 && !selectedFile ? (
           <div className="file-empty">Select a file</div>
         ) : null}
@@ -512,11 +575,14 @@ function App(): React.JSX.Element {
   } = view
   const runtimes = useMemo(() => new Map<string, TerminalRuntime>(), [])
   const containers = useMemo(() => new Map<string, HTMLDivElement>(), [])
+  const settingsDialogRef = useRef<HTMLDialogElement>(null)
   const creating = useRef(false)
   const fileListVersion = useRef<number | undefined>(undefined)
   const shortcutHandlers = useRef({
     closeActiveView: () => {},
     createTerminal: () => {},
+    openSettings: () => {},
+    closeSettings: () => {},
     openWorkspace: () => {},
     openWorkspaceInNewWindow: () => {},
     toggleFiles: () => {},
@@ -621,6 +687,12 @@ function App(): React.JSX.Element {
           event.preventDefault()
           if (event.shiftKey) shortcutHandlers.current.openWorkspaceInNewWindow()
           else shortcutHandlers.current.openWorkspace()
+          return false
+        }
+
+        if (event.code === 'Comma') {
+          event.preventDefault()
+          shortcutHandlers.current.openSettings()
           return false
         }
 
@@ -748,6 +820,22 @@ function App(): React.JSX.Element {
     await window.api.workspace.openFolder({ newWindow: true })
   }, [])
 
+  const openSettings = useCallback(() => {
+    if (settingsDialogRef.current?.open) {
+      dispatchView({ type: 'setSettingsOpen', open: false })
+      settingsDialogRef.current.close()
+      return
+    }
+
+    dispatchView({ type: 'setSettingsOpen', open: true })
+    settingsDialogRef.current?.showModal()
+  }, [])
+
+  const closeSettings = useCallback(() => {
+    dispatchView({ type: 'setSettingsOpen', open: false })
+    settingsDialogRef.current?.close()
+  }, [])
+
   const toggleReviewItem = useCallback((id: string) => {
     dispatchView({ type: 'toggleReviewItem', id })
   }, [])
@@ -770,13 +858,24 @@ function App(): React.JSX.Element {
   useEffect(() => {
     shortcutHandlers.current = {
       closeActiveView,
+      closeSettings,
       createTerminal,
+      openSettings,
       openWorkspace,
       openWorkspaceInNewWindow,
       toggleFiles,
       toggleReview
     }
-  }, [closeActiveView, createTerminal, openWorkspace, openWorkspaceInNewWindow, toggleFiles, toggleReview])
+  }, [
+    closeActiveView,
+    closeSettings,
+    createTerminal,
+    openSettings,
+    openWorkspace,
+    openWorkspaceInNewWindow,
+    toggleFiles,
+    toggleReview
+  ])
 
   useEffect(() => {
     void window.api.workspace.get().then(({ root, version }) => {
@@ -838,6 +937,24 @@ function App(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
+    return window.api.window.onCommand((command) => {
+      if (command === 'new-terminal') void createTerminal()
+      else if (command === 'open-workspace') void openWorkspace()
+      else if (command === 'open-workspace-new-window') void openWorkspaceInNewWindow()
+      else if (command === 'settings') openSettings()
+      else if (command === 'toggle-files') toggleFiles()
+      else if (command === 'toggle-review') toggleReview()
+    })
+  }, [
+    createTerminal,
+    openSettings,
+    openWorkspace,
+    openWorkspaceInNewWindow,
+    toggleFiles,
+    toggleReview
+  ])
+
+  useEffect(() => {
     return tinykeys(window, {
       '$mod+KeyG': (event) => {
         event.preventDefault()
@@ -863,9 +980,23 @@ function App(): React.JSX.Element {
       '$mod+Shift+KeyO': (event) => {
         event.preventDefault()
         void openWorkspaceInNewWindow()
-      }
+      },
+      '$mod+Comma': (event) => {
+        event.preventDefault()
+        openSettings()
+      },
+      Escape: () => closeSettings()
     })
-  }, [closeActiveView, createTerminal, openWorkspace, openWorkspaceInNewWindow, toggleFiles, toggleReview])
+  }, [
+    closeActiveView,
+    closeSettings,
+    createTerminal,
+    openSettings,
+    openWorkspace,
+    openWorkspaceInNewWindow,
+    toggleFiles,
+    toggleReview
+  ])
 
   return (
     <main className="app-shell">
@@ -959,6 +1090,8 @@ function App(): React.JSX.Element {
           onToggleItem={toggleReviewItem}
         />
       ) : null}
+
+      <SettingsDialog dialogRef={settingsDialogRef} onClose={closeSettings} />
 
       {mode === 'files' ? (
         <FilesPanel
