@@ -1,7 +1,7 @@
 {
   "name": "space",
   "productName": "Space",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A lightweight coding workspace",
   "main": "./out/main/index.js",
   "author": "example.com",
