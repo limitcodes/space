@@ -27,6 +27,7 @@ const api = {
   files: {
     list: (options?: { knownVersion?: number }) => ipcRenderer.invoke('files:list', options),
     read: (path: string) => ipcRenderer.invoke('files:read', path),
+    write: (path: string, content: string) => ipcRenderer.invoke('files:write', path, content),
     getPathForFile: (file: File) => webUtils.getPathForFile(file)
   },
   review: {

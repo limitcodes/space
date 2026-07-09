@@ -35,6 +35,14 @@ export interface FilesApi {
     size: number
     kind: 'text' | 'binary' | 'too-large' | 'directory'
   }>
+  write(
+    path: string,
+    content: string
+  ): Promise<{
+    path: string
+    size: number
+    kind: 'text'
+  }>
   getPathForFile(file: File): string
 }
 

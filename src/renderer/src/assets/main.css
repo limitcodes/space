@@ -359,6 +359,7 @@ body.is-fullscreen .terminal-navbar {
 }
 
 .file-viewer-body {
+  display: grid;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -371,13 +372,20 @@ body.is-fullscreen .terminal-navbar {
   white-space: nowrap;
 }
 
-.file-viewer-toggle {
+.file-viewer-actions {
   display: inline-flex;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   margin-left: 10px;
 }
 
-.file-viewer-toggle button {
+.file-viewer-toggle {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.file-viewer-toggle button,
+.file-save {
   cursor: pointer;
   border-radius: 5px;
   background: transparent;
@@ -387,14 +395,32 @@ body.is-fullscreen .terminal-navbar {
 }
 
 .file-viewer-toggle button:hover,
-.file-viewer-toggle button.is-active {
+.file-viewer-toggle button.is-active,
+.file-save:hover:not(:disabled) {
   background: #242424;
   color: var(--color-text);
 }
 
-.file-viewer-toggle button:disabled {
+.file-viewer-toggle button:disabled,
+.file-save:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.file-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: var(--color-background);
+  color: #d7d7d7;
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 12px 14px;
+  user-select: text;
 }
 
 .file-empty {

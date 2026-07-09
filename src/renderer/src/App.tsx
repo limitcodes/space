@@ -98,9 +98,10 @@ type FilesPanelProps = {
   gitStatus: GitStatusEntry[]
   truncated: boolean
   onSelectPath: (path: string) => void
+  onFileSaved: (file: FileReadResult) => void
 }
 
-type ViewerMode = 'preview' | 'source'
+type ViewerMode = 'preview' | 'source' | 'edit'
 
 type ReviewSummary = {
   files: number
@@ -244,6 +245,12 @@ function isMarkdown(path: string): boolean {
   return /\.mdx?$/i.test(path)
 }
 
+function isEditableFile(path: string): boolean {
+  if (isMarkdown(path)) return true
+  const name = path.split(/[\\/]/).pop() ?? ''
+  return name === '.env' || name.startsWith('.env.')
+}
+
 function getWorkspaceName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() || path
 }
@@ -285,22 +292,46 @@ function CodeWithLineNumbers({
   )
 }
 
-function FilePreview({ file }: { file: FileReadResult }): React.JSX.Element {
-  const [viewerMode, setViewerMode] = useState<ViewerMode>('preview')
+function FilePreview({
+  file,
+  onSaved
+}: {
+  file: FileReadResult
+  onSaved: (file: FileReadResult) => void
+}): React.JSX.Element {
+  const editable = isEditableFile(file.path)
+  const markdown = isMarkdown(file.path)
+  const [viewerMode, setViewerMode] = useState<ViewerMode>(
+    markdown ? 'preview' : editable ? 'edit' : 'source'
+  )
+  const [draft, setDraft] = useState(file.content)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [highlightState, setHighlightState] = useState<{
     lines: HighlightedToken[][] | null
     loading: boolean
     failed: boolean
   }>({ lines: null, loading: false, failed: false })
-  const markdown = isMarkdown(file.path)
   const canRenderMarkdown = markdown && file.size <= maxRenderedMarkdownBytes
   const canHighlight = file.size <= maxHighlightedBytes
+  const dirty = viewerMode === 'edit' && draft !== file.content
+  const showSource = viewerMode === 'source' || (!markdown && viewerMode !== 'edit')
+
+  useEffect(() => {
+    setDraft(file.content)
+    setSaveError(null)
+    setViewerMode(markdown ? 'preview' : editable ? 'edit' : 'source')
+  }, [editable, file.content, file.path, markdown])
 
   useEffect(() => {
     let canceled = false
-    setHighlightState({ lines: null, loading: file.kind === 'text' && canHighlight, failed: false })
+    setHighlightState({
+      lines: null,
+      loading: file.kind === 'text' && canHighlight && showSource,
+      failed: false
+    })
 
-    if (file.kind !== 'text' || !canHighlight) return
+    if (file.kind !== 'text' || !canHighlight || !showSource) return
 
     void getHighlighter()
       .then((highlighter) =>
@@ -326,7 +357,21 @@ function FilePreview({ file }: { file: FileReadResult }): React.JSX.Element {
     return () => {
       canceled = true
     }
-  }, [canHighlight, file])
+  }, [canHighlight, file, showSource])
+
+  const saveFile = useCallback(async () => {
+    if (!dirty || saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const saved = await window.api.files.write(file.path, draft)
+      onSaved({ ...saved, content: draft })
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }, [dirty, draft, file.path, onSaved, saving])
 
   if (file.kind === 'directory') return <div className="file-empty">{file.path}</div>
   if (file.kind === 'binary') return <div className="file-empty">Binary file</div>
@@ -337,29 +382,71 @@ function FilePreview({ file }: { file: FileReadResult }): React.JSX.Element {
   return (
     <>
       <div className="file-viewer-header">
-        <span className="file-viewer-path">{file.path}</span>
-        {markdown ? (
-          <div className="file-viewer-toggle" aria-label="Markdown view mode">
+        <span className="file-viewer-path">
+          {file.path}
+          {dirty ? ' •' : ''}
+        </span>
+        <div className="file-viewer-actions">
+          {editable ? (
+            <div className="file-viewer-toggle" aria-label="File view mode">
+              {markdown ? (
+                <button
+                  className={viewerMode === 'preview' ? 'is-active' : ''}
+                  disabled={!canRenderMarkdown}
+                  onClick={() => setViewerMode('preview')}
+                  type="button"
+                >
+                  Preview
+                </button>
+              ) : null}
+              <button
+                className={viewerMode === 'source' ? 'is-active' : ''}
+                onClick={() => setViewerMode('source')}
+                type="button"
+              >
+                Source
+              </button>
+              <button
+                className={viewerMode === 'edit' ? 'is-active' : ''}
+                onClick={() => setViewerMode('edit')}
+                type="button"
+              >
+                Edit
+              </button>
+            </div>
+          ) : null}
+          {viewerMode === 'edit' ? (
             <button
-              className={viewerMode === 'preview' ? 'is-active' : ''}
-              disabled={!canRenderMarkdown}
-              onClick={() => setViewerMode('preview')}
+              className="file-save"
+              disabled={!dirty || saving}
+              onClick={() => void saveFile()}
               type="button"
             >
-              Preview
+              {saving ? 'Saving…' : 'Save'}
             </button>
-            <button
-              className={viewerMode === 'source' ? 'is-active' : ''}
-              onClick={() => setViewerMode('source')}
-              type="button"
-            >
-              Source
-            </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
       <div className="file-viewer-body">
+        {viewerMode === 'edit' ? (
+          <textarea
+            aria-label={`Edit ${file.path}`}
+            className="file-editor"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+                event.preventDefault()
+                void saveFile()
+              }
+            }}
+            spellCheck={markdown}
+            value={draft}
+          />
+        ) : null}
+
+        {saveError ? <div className="file-empty">{saveError}</div> : null}
+
         {markdown && viewerMode === 'preview' && canRenderMarkdown ? (
           <Suspense fallback={<div className="file-empty">Rendering markdown…</div>}>
             <article className="markdown-preview">
@@ -372,23 +459,19 @@ function FilePreview({ file }: { file: FileReadResult }): React.JSX.Element {
           <div className="file-empty">Markdown is too large to render. Use Source.</div>
         ) : null}
 
-        {(!markdown || viewerMode === 'source') && highlightState.lines ? (
+        {showSource && highlightState.lines ? (
           <CodeWithLineNumbers highlightedLines={highlightState.lines} />
         ) : null}
 
-        {(!markdown || viewerMode === 'source') &&
-        !highlightState.lines &&
-        highlightState.loading ? (
+        {showSource && !highlightState.lines && highlightState.loading ? (
           <div className="file-empty">Highlighting…</div>
         ) : null}
 
-        {(!markdown || viewerMode === 'source') &&
-        !highlightState.lines &&
-        !highlightState.loading ? (
+        {showSource && !highlightState.lines && !highlightState.loading ? (
           <CodeWithLineNumbers content={file.content} />
         ) : null}
 
-        {highlightState.failed ? (
+        {showSource && highlightState.failed ? (
           <div className="file-highlight-warning">Plain text fallback</div>
         ) : null}
       </div>
@@ -544,7 +627,8 @@ function FilesPanel({
   loading,
   gitStatus,
   truncated,
-  onSelectPath
+  onSelectPath,
+  onFileSaved
 }: FilesPanelProps): React.JSX.Element {
   const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths])
   const { model } = useFileTree({
@@ -577,7 +661,9 @@ function FilesPanel({
         {!loading && paths.length > 0 && !selectedFile ? (
           <div className="file-empty">Select a file</div>
         ) : null}
-        {selectedFile ? <FilePreview key={selectedFile.path} file={selectedFile} /> : null}
+        {selectedFile ? (
+          <FilePreview key={selectedFile.path} file={selectedFile} onSaved={onFileSaved} />
+        ) : null}
       </main>
     </section>
   )
@@ -1310,6 +1396,7 @@ function App(): React.JSX.Element {
           gitStatus={fileGitStatus}
           truncated={filesTruncated}
           onSelectPath={selectFilePath}
+          onFileSaved={(file) => dispatchView({ type: 'fileLoaded', file })}
         />
       ) : null}
     </main>

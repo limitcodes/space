@@ -4,7 +4,7 @@ import os from 'os'
 import { watch, type FSWatcher } from 'fs'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { opendir, readFile, stat } from 'fs/promises'
+import { opendir, readFile, stat, writeFile } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import pty from 'node-pty'
@@ -650,6 +650,19 @@ function registerFileIpc(): void {
     }
 
     return { path, content: buffer.toString('utf8'), size: fileStat.size, kind: 'text' }
+  })
+
+  ipcMain.handle('files:write', async (event, path: string, content: string) => {
+    const { root } = getWorkspace(event)
+    const absolutePath = safeJoin(root, path)
+    const size = Buffer.byteLength(content, 'utf8')
+
+    if (size > maxTextFileBytes) {
+      throw new Error('File is too large to save')
+    }
+
+    await writeFile(absolutePath, content, 'utf8')
+    return { path, size, kind: 'text' as const }
   })
 }
 
